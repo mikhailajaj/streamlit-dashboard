@@ -8,9 +8,12 @@
 activity-nov-5/
 ├── streamlit_dashboard.py          # Main dashboard application
 ├── eda_lib.py                     # Core analysis functions library
-├── requirements.txt               # Python dependencies
+├── ml_models.py                   # 🆕 ML models for forecasting & anomaly detection
+├── ml_pipeline.py                 # 🆕 ML pipeline orchestration
+├── model_config.py                # 🆕 ML model configuration
+├── requirements.txt               # Python dependencies (includes ML packages)
 ├── README.md                      # Project documentation
-└── Week 9 - EDA/
+└── Data/
     ├── aws_resources_compute.csv  # EC2 dataset
     └── aws_resources_S3.csv       # S3 dataset
 ```
@@ -27,6 +30,8 @@ activity-nov-5/
 - `plotly.graph_objects` - Advanced plotly features
 - `plotly.subplots` - Multiple chart layouts
 - `eda_lib` - **CRITICAL: Custom analysis library**
+- `ml_pipeline` - **🆕 ML pipeline and metrics**
+- `ml_models` - **🆕 ML forecasting and anomaly detection**
 - `warnings` - Built-in Python module
 
 **Functions from eda_lib.py used:**
@@ -44,6 +49,9 @@ activity-nov-5/
 streamlit-dashboard-package.zip
 ├── streamlit_dashboard.py
 ├── eda_lib.py
+├── ml_models.py                   # 🆕 ML functionality
+├── ml_pipeline.py                 # 🆕 ML pipeline
+├── model_config.py                # 🆕 ML configuration
 ├── requirements.txt
 ├── README.md
 └── data/
@@ -54,11 +62,14 @@ streamlit-dashboard-package.zip
 ### **Complete Package (Recommended):**
 ```
 streamlit-dashboard-complete.zip
-├── streamlit_dashboard.py         # Main dashboard
+├── streamlit_dashboard.py         # Main dashboard with ML features
 ├── eda_lib.py                     # Analysis library
+├── ml_models.py                   # 🆕 ML models (forecasting, anomaly detection, clustering, optimization)
+├── ml_pipeline.py                 # 🆕 ML pipeline orchestration
+├── model_config.py                # 🆕 ML model configuration and validation
 ├── eda_analysis.py                # Standalone analysis script
-├── requirements.txt               # Dependencies
-├── README.md                      # Documentation
+├── requirements.txt               # Dependencies (including ML packages)
+├── README.md                      # Documentation with ML features
 ├── test_enhanced_dashboard.py     # Test script
 ├── data/
 │   ├── aws_resources_compute.csv  # EC2 data
@@ -107,16 +118,16 @@ streamlit run streamlit_dashboard.py
 
 ### **eda_lib.py depends on:**
 - Standard Python libraries (pandas, numpy, matplotlib, seaborn)
-- CSV data files in 'Week 9 - EDA/' directory
+- CSV data files in 'data/' directory
 
 ### **Data files expected:**
-- `Week 9 - EDA/aws_resources_compute.csv`
-- `Week 9 - EDA/aws_resources_S3.csv`
+- `data/aws_resources_compute.csv`
+- `data/aws_resources_S3.csv`
 
 ## ⚠️ **Critical Notes:**
 
 1. **eda_lib.py is ESSENTIAL** - Dashboard will crash without it
-2. **CSV files must be in 'Week 9 - EDA/' subdirectory**
+2. **CSV files must be in 'data/' subdirectory**
 3. **requirements.txt** ensures all packages are installed
 4. **File structure must be maintained** for proper imports
 
@@ -131,7 +142,7 @@ python test_enhanced_dashboard.py  # Verify all components work
 - [ ] eda_lib.py included  
 - [ ] requirements.txt included
 - [ ] README.md included
-- [ ] Week 9 - EDA/ folder with CSV files
+- [ ] data/ folder with CSV files
 - [ ] All file paths maintain relative structure
 - [ ] Test script runs without errors
 

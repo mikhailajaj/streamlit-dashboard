@@ -15,6 +15,46 @@ from eda_lib import *
 import warnings
 warnings.filterwarnings('ignore')
 
+# Try to import ML modules, fallback to None if not available
+ML_AVAILABLE = True
+ML_ERROR_MESSAGE = None
+
+try:
+    from ml_pipeline import AWSMLPipeline, MLMetrics
+    from ml_models import AWSCostForecaster, AWSAnomalyDetector, AWSResourceClusterer, AWSOptimizationPredictor
+    
+    # Initialize ML Pipeline
+    @st.cache_resource
+    def get_ml_pipeline():
+        return AWSMLPipeline()
+        
+except ImportError as e:
+    ML_AVAILABLE = False
+    ML_ERROR_MESSAGE = str(e)
+    
+    # Show helpful error message in Streamlit
+    if "prophet" in str(e).lower():
+        ML_ERROR_MESSAGE = "⚠️ Prophet not available. Install with: `pip install prophet`"
+    else:
+        ML_ERROR_MESSAGE = f"⚠️ ML features unavailable: {e}"
+    
+    # Create dummy classes for fallback
+    class AWSMLPipeline:
+        pass
+    class MLMetrics:
+        pass
+    class AWSCostForecaster:
+        pass
+    class AWSAnomalyDetector:
+        pass
+    class AWSResourceClusterer:
+        pass
+    class AWSOptimizationPredictor:
+        pass
+    
+    def get_ml_pipeline():
+        return None
+
 # Page configuration
 st.set_page_config(
     page_title="AWS EC2 & S3 Analysis Dashboard",
@@ -57,6 +97,10 @@ def main():
     st.markdown('<h1 class="main-header">☁️ AWS EC2 & S3 Analysis Dashboard</h1>', unsafe_allow_html=True)
     st.markdown("### Week 9 Activity - Exploratory Data Analysis")
     
+    # Show ML dependency warning if needed
+    if not ML_AVAILABLE and ML_ERROR_MESSAGE:
+        st.warning(ML_ERROR_MESSAGE)
+    
     # Load data
     with st.spinner("Loading data..."):
         ec2_df, s3_df = load_and_prepare_data()
@@ -64,10 +108,14 @@ def main():
     # Sidebar
     st.sidebar.title("🎛️ Dashboard Controls")
     
+    # Show ML dependency warning if needed
+    if not ML_AVAILABLE:
+        st.sidebar.warning("⚠️ ML features require additional dependencies. See ML sections for installation instructions.")
+    
     # Analysis type selection
     analysis_type = st.sidebar.selectbox(
         "Select Analysis Type",
-        ["Overview", "EC2 Analysis", "S3 Analysis", "Comparative Analysis", "Optimization", "Task Completion"]
+        ["Overview", "EC2 Analysis", "S3 Analysis", "Comparative Analysis", "Optimization", "🤖 ML Forecasting", "🚨 Anomaly Detection", "🎯 Smart Clustering", "💡 AI Recommendations", "Task Completion"]
     )
     
     st.sidebar.markdown("---")
@@ -252,6 +300,14 @@ def main():
         show_comparative_analysis(ec2_filtered, s3_filtered)
     elif analysis_type == "Optimization":
         show_optimization(ec2_filtered, s3_filtered)
+    elif analysis_type == "🤖 ML Forecasting":
+        show_ml_forecasting(ec2_filtered, s3_filtered)
+    elif analysis_type == "🚨 Anomaly Detection":
+        show_anomaly_detection(ec2_filtered, s3_filtered)
+    elif analysis_type == "🎯 Smart Clustering":
+        show_smart_clustering(ec2_filtered, s3_filtered)
+    elif analysis_type == "💡 AI Recommendations":
+        show_ai_recommendations(ec2_filtered, s3_filtered)
     elif analysis_type == "Task Completion":
         show_task_completion(ec2_filtered, s3_filtered)
 
@@ -857,6 +913,441 @@ def show_task_completion(ec2_df, s3_df):
     
     **Status: READY FOR SUBMISSION** 📋
     """)
+
+def show_ml_setup_instructions():
+    """Show ML setup instructions when dependencies are missing"""
+    st.error("🚨 **ML Dependencies Not Available**")
+    
+    st.markdown("""
+    The ML features require additional Python packages. To enable all ML capabilities, please install:
+    
+    ### 🔧 **Installation Steps:**
+    
+    ```bash
+    pip install scikit-learn prophet scipy joblib statsmodels
+    ```
+    
+    ### 📋 **What You'll Get After Installation:**
+    - 🤖 **Cost Forecasting**: 7-90 day predictions with confidence intervals
+    - 🚨 **Anomaly Detection**: Automatic detection of unusual cost patterns
+    - 🎯 **Smart Clustering**: Resource grouping by efficiency patterns  
+    - 💡 **AI Recommendations**: ML-driven optimization suggestions with savings estimates
+    
+    ### 🚀 **After Installation:**
+    1. Restart your Streamlit app: `streamlit run streamlit_dashboard.py`
+    2. Navigate back to this ML section
+    3. Enjoy powerful AI-driven cost optimization!
+    """)
+    
+    st.info("💡 **Note**: The basic dashboard features (Overview, EC2 Analysis, S3 Analysis, etc.) work without these ML dependencies.")
+
+def show_ml_forecasting(ec2_df, s3_df):
+    """Display ML-powered cost forecasting"""
+    st.header("🤖 ML-Powered Cost Forecasting")
+    st.markdown("Advanced time series forecasting using Prophet and ARIMA models to predict future AWS costs.")
+    
+    # Check if ML is available
+    if not ML_AVAILABLE:
+        show_ml_setup_instructions()
+        return
+    
+    # ML Pipeline
+    ml_pipeline = get_ml_pipeline()
+    
+    # Data validation
+    validation_results = validate_ml_data(ec2_df, s3_df)
+    
+    if not validation_results['overall']['passed']:
+        st.error("❌ Data validation failed!")
+        for dataset in ['ec2', 's3']:
+            if validation_results[dataset]['issues']:
+                st.error(f"**{dataset.upper()} Issues:**")
+                for issue in validation_results[dataset]['issues']:
+                    st.write(f"- {issue}")
+        return
+    
+    # Model selection
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        st.subheader("🎛️ Forecast Settings")
+        forecast_periods = st.slider("Forecast Period (days)", 7, 90, 30)
+        forecast_model = st.selectbox("Model Type", ["Prophet (Recommended)", "ARIMA"])
+        
+        # Model training control
+        force_retrain = st.checkbox("Force Model Retraining", help="Check to retrain models with current data")
+        
+        if st.button("🚀 Generate Forecast"):
+            with st.spinner("Training models and generating forecasts..."):
+                # Train models
+                success = ml_pipeline.train_all_models(ec2_df, s3_df, force_retrain=force_retrain)
+                
+                if success:
+                    # Generate predictions
+                    model_type = 'prophet' if 'Prophet' in forecast_model else 'arima'
+                    forecaster = AWSCostForecaster(model_type=model_type)
+                    forecaster.fit(ec2_df, s3_df)
+                    
+                    forecast_data = forecaster.predict(periods=forecast_periods)
+                    
+                    # Store in session state
+                    st.session_state['forecast_data'] = forecast_data
+                    st.session_state['forecast_chart'] = forecaster.plot_forecast(forecast_data, periods=forecast_periods)
+                    
+                    st.success("✅ Forecast generated successfully!")
+    
+    with col1:
+        if 'forecast_data' in st.session_state:
+            st.subheader("📊 Cost Forecast Results")
+            st.plotly_chart(st.session_state['forecast_chart'], use_container_width=True)
+            
+            # Forecast metrics
+            if forecast_model.startswith("Prophet"):
+                metrics = MLMetrics.display_forecast_metrics(st.session_state['forecast_data'])
+                
+                col1a, col1b, col1c = st.columns(3)
+                with col1a:
+                    st.metric("Avg Daily Cost", metrics['Avg Daily Cost'])
+                with col1b:
+                    st.metric("Monthly Projection", metrics['Monthly Projection'])
+                with col1c:
+                    st.metric("Max Daily Cost", metrics['Max Daily Cost'])
+        else:
+            st.info("👆 Configure settings and click 'Generate Forecast' to see predictions")
+    
+    # Forecast insights
+    if 'forecast_data' in st.session_state:
+        st.subheader("🔍 Forecast Insights")
+        
+        with st.expander("📈 Trend Analysis", expanded=True):
+            forecast_data = st.session_state['forecast_data']
+            
+            if 'yhat' in forecast_data.columns:
+                recent_avg = forecast_data['yhat'].tail(7).mean()
+                future_avg = forecast_data['yhat'].tail(forecast_periods).mean()
+                
+                trend_change = ((future_avg - recent_avg) / recent_avg) * 100
+                
+                if trend_change > 10:
+                    st.warning(f"📈 **Increasing Trend Detected**: Costs are projected to increase by {trend_change:.1f}% over the forecast period.")
+                elif trend_change < -10:
+                    st.success(f"📉 **Decreasing Trend Detected**: Costs are projected to decrease by {abs(trend_change):.1f}% over the forecast period.")
+                else:
+                    st.info(f"📊 **Stable Trend**: Costs are projected to remain relatively stable (±{abs(trend_change):.1f}%).")
+
+def show_anomaly_detection(ec2_df, s3_df):
+    """Display ML-powered anomaly detection"""
+    st.header("🚨 AI-Powered Anomaly Detection")
+    st.markdown("Intelligent detection of unusual cost patterns and resource usage anomalies using Isolation Forest.")
+    
+    # Check if ML is available
+    if not ML_AVAILABLE:
+        show_ml_setup_instructions()
+        return
+    
+    # Data validation
+    validation_results = validate_ml_data(ec2_df, s3_df)
+    if not validation_results['overall']['passed']:
+        st.error("❌ Data validation failed! Please check your data quality.")
+        return
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        st.subheader("🎛️ Detection Settings")
+        contamination = st.slider("Anomaly Sensitivity", 0.05, 0.3, 0.1, 0.05, 
+                                help="Lower values = more sensitive detection")
+        
+        if st.button("🔍 Detect Anomalies"):
+            with st.spinner("Analyzing cost patterns for anomalies..."):
+                detector = AWSAnomalyDetector(contamination=contamination)
+                detector.fit(ec2_df, s3_df)
+                
+                anomaly_results = detector.predict_anomalies()
+                anomaly_chart = detector.plot_anomalies(anomaly_results)
+                
+                st.session_state['anomaly_results'] = anomaly_results
+                st.session_state['anomaly_chart'] = anomaly_chart
+                
+                st.success("✅ Anomaly detection completed!")
+    
+    with col1:
+        if 'anomaly_results' in st.session_state:
+            st.subheader("🎯 Anomaly Detection Results")
+            st.plotly_chart(st.session_state['anomaly_chart'], use_container_width=True)
+            
+            # Anomaly metrics
+            anomaly_results = st.session_state['anomaly_results']
+            metrics = MLMetrics.display_anomaly_metrics(anomaly_results)
+            
+            col1a, col1b, col1c = st.columns(3)
+            with col1a:
+                st.metric("Total Regions", metrics['Total Regions'])
+            with col1b:
+                st.metric("Anomalous Regions", metrics['Anomalous Regions'], 
+                         delta=f"{metrics['Anomaly Rate']}")
+            with col1c:
+                st.metric("Most Anomalous", metrics['Most Anomalous'])
+        else:
+            st.info("👆 Configure settings and click 'Detect Anomalies' to analyze patterns")
+    
+    # Anomaly details
+    if 'anomaly_results' in st.session_state:
+        st.subheader("🔍 Anomaly Details")
+        
+        anomaly_results = st.session_state['anomaly_results']
+        anomalous_regions = anomaly_results[anomaly_results['Is_Anomaly'] == True]
+        
+        if len(anomalous_regions) > 0:
+            st.warning(f"⚠️ **{len(anomalous_regions)} Anomalous Regions Detected:**")
+            
+            for _, region in anomalous_regions.iterrows():
+                with st.expander(f"🚨 {region['Region']} - Anomaly Score: {region['Anomaly_Score']:.3f}"):
+                    region_ec2 = ec2_df[ec2_df['Region'] == region['Region']]
+                    region_s3 = s3_df[s3_df['Region'] == region['Region']]
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**EC2 Statistics:**")
+                        if len(region_ec2) > 0:
+                            st.write(f"- Instances: {len(region_ec2)}")
+                            st.write(f"- Avg Cost/Hour: ${region_ec2['CostPerHourUSD'].mean():.3f}")
+                            st.write(f"- Avg CPU: {region_ec2['CPUUtilization'].mean():.1f}%")
+                        else:
+                            st.write("- No EC2 instances")
+                    
+                    with col2:
+                        st.write("**S3 Statistics:**")
+                        if len(region_s3) > 0:
+                            st.write(f"- Buckets: {len(region_s3)}")
+                            st.write(f"- Total Cost/Month: ${region_s3['MonthlyCostUSD'].sum():.2f}")
+                            st.write(f"- Total Storage: {region_s3['TotalSizeGB'].sum():.1f} GB")
+                        else:
+                            st.write("- No S3 buckets")
+        else:
+            st.success("✅ No significant anomalies detected in your cost patterns!")
+
+def show_smart_clustering(ec2_df, s3_df):
+    """Display ML-powered resource clustering"""
+    st.header("🎯 Smart Resource Clustering")
+    st.markdown("Intelligent grouping of resources based on cost patterns, utilization, and efficiency using K-Means clustering.")
+    
+    # Check if ML is available
+    if not ML_AVAILABLE:
+        show_ml_setup_instructions()
+        return
+    
+    # Data validation
+    validation_results = validate_ml_data(ec2_df, s3_df)
+    if not validation_results['overall']['passed']:
+        st.error("❌ Data validation failed! Please check your data quality.")
+        return
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        st.subheader("🎛️ Clustering Settings")
+        max_clusters = st.slider("Max Clusters", 3, 10, 6)
+        
+        if st.button("🎯 Analyze Clusters"):
+            with st.spinner("Performing intelligent resource clustering..."):
+                clusterer = AWSResourceClusterer(n_clusters=max_clusters)
+                clusterer.fit(ec2_df, s3_df)
+                
+                cluster_insights = clusterer.get_cluster_insights()
+                cluster_chart = clusterer.plot_clusters()
+                
+                st.session_state['cluster_insights'] = cluster_insights
+                st.session_state['cluster_chart'] = cluster_chart
+                st.session_state['clusterer'] = clusterer
+                
+                st.success("✅ Clustering analysis completed!")
+    
+    with col1:
+        if 'cluster_chart' in st.session_state:
+            st.subheader("📊 Resource Cluster Visualization")
+            st.plotly_chart(st.session_state['cluster_chart'], use_container_width=True)
+            
+            # Clustering metrics
+            if 'cluster_insights' in st.session_state:
+                cluster_insights = st.session_state['cluster_insights']
+                metrics = MLMetrics.display_cluster_metrics(cluster_insights)
+                
+                col1a, col1b, col1c = st.columns(3)
+                with col1a:
+                    st.metric("Total Clusters", metrics['Total Clusters'])
+                with col1b:
+                    st.metric("Total Resources", metrics['Total Resources'])
+                with col1c:
+                    st.metric("Most Efficient Cluster", f"Cluster {metrics['Most Efficient Cluster']}")
+        else:
+            st.info("👆 Configure settings and click 'Analyze Clusters' to see resource groupings")
+    
+    # Cluster insights
+    if 'cluster_insights' in st.session_state:
+        st.subheader("🔍 Cluster Analysis")
+        
+        cluster_insights = st.session_state['cluster_insights']
+        
+        for insight in cluster_insights:
+            with st.expander(f"📦 Cluster {insight['cluster_id']} - {insight['size']} resources"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Avg CPU/Usage", f"{insight['avg_cpu']:.1f}%")
+                    st.metric("Avg Memory", f"{insight['avg_memory']:.1f}%")
+                
+                with col2:
+                    st.metric("Avg Cost/Hour", f"${insight['avg_cost']:.3f}")
+                    st.metric("Efficiency Score", f"{insight['avg_efficiency']:.2f}")
+                
+                with col3:
+                    st.write("**Resource Types:**")
+                    for resource_type, count in insight['resource_types'].items():
+                        st.write(f"- {resource_type}: {count}")
+                
+                # Recommendation
+                if insight['recommendation']:
+                    if "optimization" in insight['recommendation'].lower():
+                        st.warning(f"💡 **Recommendation:** {insight['recommendation']}")
+                    else:
+                        st.success(f"✅ **Status:** {insight['recommendation']}")
+
+def show_ai_recommendations(ec2_df, s3_df):
+    """Display AI-powered optimization recommendations"""
+    st.header("💡 AI-Powered Smart Recommendations")
+    st.markdown("Machine learning-driven optimization suggestions using Random Forest models.")
+    
+    # Check if ML is available
+    if not ML_AVAILABLE:
+        show_ml_setup_instructions()
+        return
+    
+    # Data validation
+    validation_results = validate_ml_data(ec2_df, s3_df)
+    if not validation_results['overall']['passed']:
+        st.error("❌ Data validation failed! Please check your data quality.")
+        return
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        st.subheader("🎛️ AI Settings")
+        confidence_threshold = st.slider("Confidence Threshold", 0.5, 0.95, 0.7, 0.05,
+                                        help="Minimum confidence for recommendations")
+        max_recommendations = st.slider("Max Recommendations", 5, 20, 10)
+        
+        if st.button("🧠 Generate AI Recommendations"):
+            with st.spinner("Training AI models and generating recommendations..."):
+                optimizer = AWSOptimizationPredictor()
+                optimizer.fit(ec2_df, s3_df)
+                
+                optimization_results = optimizer.predict_optimizations(ec2_df, s3_df)
+                recommendations = optimizer.generate_smart_recommendations(optimization_results)
+                
+                # Filter by confidence
+                filtered_recommendations = [
+                    rec for rec in recommendations 
+                    if rec['confidence'] >= confidence_threshold
+                ][:max_recommendations]
+                
+                st.session_state['ai_recommendations'] = filtered_recommendations
+                st.session_state['optimization_results'] = optimization_results
+                
+                st.success("✅ AI recommendations generated!")
+    
+    with col1:
+        if 'ai_recommendations' in st.session_state:
+            recommendations = st.session_state['ai_recommendations']
+            
+            if recommendations:
+                st.subheader("🎯 Smart Optimization Recommendations")
+                
+                # Summary metrics
+                metrics = MLMetrics.display_optimization_metrics(recommendations)
+                
+                col1a, col1b, col1c, col1d = st.columns(4)
+                with col1a:
+                    st.metric("Total Recommendations", metrics['Total Recommendations'])
+                with col1b:
+                    st.metric("EC2 Optimizations", metrics['EC2 Optimizations'])
+                with col1c:
+                    st.metric("S3 Optimizations", metrics['S3 Optimizations'])
+                with col1d:
+                    st.metric("Monthly Savings", metrics['Potential Monthly Savings'])
+                
+                # Individual recommendations
+                st.subheader("📋 Detailed Recommendations")
+                
+                for i, rec in enumerate(recommendations, 1):
+                    with st.expander(f"💡 Recommendation {i}: {rec['type']} - {rec['resource_id']} (Confidence: {rec['confidence']:.1%})"):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Current Status:**")
+                            if rec['type'] == 'EC2':
+                                st.write(f"- Current Cost: ${rec['current_cost']:.3f}/hour")
+                                st.write(f"- CPU Utilization: {rec['cpu_utilization']:.1f}%")
+                            else:
+                                st.write(f"- Current Cost: ${rec['current_cost']:.2f}/month")
+                                st.write(f"- Storage Size: {rec['storage_size']:.1f} GB")
+                        
+                        with col2:
+                            st.write("**Optimization Impact:**")
+                            st.write(f"- **Action:** {rec['action']}")
+                            st.write(f"- **Potential Savings:** ${rec['potential_savings']:.2f}/month")
+                            st.write(f"- **Confidence:** {rec['confidence']:.1%}")
+                        
+                        # Action buttons
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button(f"✅ Implement", key=f"implement_{i}"):
+                                st.success("Implementation guidance would be provided here")
+                        with col2:
+                            if st.button(f"📊 Analyze", key=f"analyze_{i}"):
+                                st.info("Detailed analysis would be shown here")
+                        with col3:
+                            if st.button(f"⏰ Remind Later", key=f"remind_{i}"):
+                                st.info("Reminder set for this recommendation")
+            else:
+                st.info("🎉 No optimization opportunities found at current confidence threshold!")
+        else:
+            st.info("👆 Configure AI settings and click 'Generate AI Recommendations' to see suggestions")
+    
+    # Cost savings summary
+    if 'ai_recommendations' in st.session_state:
+        recommendations = st.session_state['ai_recommendations']
+        
+        if recommendations:
+            st.subheader("💰 Potential Cost Savings Summary")
+            
+            total_monthly_savings = sum(rec['potential_savings'] for rec in recommendations)
+            total_annual_savings = total_monthly_savings * 12
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Total Monthly Savings",
+                    f"${total_monthly_savings:.2f}",
+                    delta="Potential reduction"
+                )
+            
+            with col2:
+                st.metric(
+                    "Total Annual Savings", 
+                    f"${total_annual_savings:.2f}",
+                    delta=f"{(total_annual_savings/12):.0f} months payback"
+                )
+            
+            with col3:
+                avg_confidence = sum(rec['confidence'] for rec in recommendations) / len(recommendations)
+                st.metric(
+                    "Avg Confidence",
+                    f"{avg_confidence:.1%}",
+                    delta="AI reliability"
+                )
 
 if __name__ == "__main__":
     main()
