@@ -12,7 +12,7 @@ import os
 
 # Import ML models with error handling
 try:
-    from ml_models import (
+    from lib.ml.models import (
         AWSCostForecaster, 
         AWSAnomalyDetector, 
         AWSResourceClusterer, 
@@ -22,8 +22,20 @@ try:
     )
     ML_MODELS_AVAILABLE = True
 except ImportError as e:
-    ML_MODELS_AVAILABLE = False
-    print(f"🔄 ML Pipeline running in fallback mode: {e}")
+    try:
+        # Fallback to relative import
+        from .models import (
+            AWSCostForecaster, 
+            AWSAnomalyDetector, 
+            AWSResourceClusterer, 
+            AWSOptimizationPredictor,
+            PROPHET_AVAILABLE,
+            ARIMA_AVAILABLE
+        )
+        ML_MODELS_AVAILABLE = True
+    except ImportError as e2:
+        ML_MODELS_AVAILABLE = False
+        print(f"🔄 ML Pipeline running in fallback mode: {e2}")
     
     # Create dummy classes for fallback
     class AWSCostForecaster:
@@ -169,29 +181,35 @@ class AWSMLPipeline:
         return True
     
     def _save_models(self):
-        """Save all trained models"""
-        model_data = {
-            'models': self.models,
+        """Save model metadata (not the actual models to avoid pickle issues)"""
+        # Don't pickle the models themselves, just save metadata
+        # Models will be retrained when needed (they train quickly)
+        model_metadata = {
             'training_time': self.last_training_time,
-            'data_hash': getattr(self, '_last_data_hash', None)
+            'data_hash': getattr(self, '_last_data_hash', None),
+            'model_types': list(self.models.keys())
         }
         
-        model_file = os.path.join(self.cache_dir, 'aws_ml_models.joblib')
-        joblib.dump(model_data, model_file)
+        metadata_file = os.path.join(self.cache_dir, 'model_metadata.joblib')
+        try:
+            joblib.dump(model_metadata, metadata_file)
+        except Exception as e:
+            # If saving fails, just log it and continue
+            print(f"Warning: Could not save model metadata: {e}")
     
     def _load_cached_models(self):
-        """Load cached models if available"""
-        model_file = os.path.join(self.cache_dir, 'aws_ml_models.joblib')
+        """Load cached model metadata (models need to be retrained)"""
+        metadata_file = os.path.join(self.cache_dir, 'model_metadata.joblib')
         
-        if os.path.exists(model_file):
+        if os.path.exists(metadata_file):
             try:
-                model_data = joblib.load(model_file)
-                self.models = model_data['models']
-                self.last_training_time = model_data['training_time']
-                self._last_data_hash = model_data.get('data_hash')
-                return True
+                metadata = joblib.load(metadata_file)
+                self.last_training_time = metadata['training_time']
+                self._last_data_hash = metadata.get('data_hash')
+                # Models themselves are not cached, return False to trigger retraining
+                return False
             except Exception as e:
-                st.warning(f"Could not load cached models: {str(e)}")
+                # If loading metadata fails, just continue
                 return False
         
         return False
@@ -291,19 +309,38 @@ class MLMetrics:
     @staticmethod
     def display_forecast_metrics(forecast_data):
         """Display forecasting model metrics"""
-        if 'yhat' not in forecast_data.columns:
-            return
-        
-        # Calculate basic metrics
-        recent_data = forecast_data.tail(30)
-        
-        metrics = {
-            'Forecast Period': '30 days',
-            'Avg Daily Cost': f"${recent_data['yhat'].mean():.2f}",
-            'Max Daily Cost': f"${recent_data['yhat'].max():.2f}",
-            'Min Daily Cost': f"${recent_data['yhat'].min():.2f}",
-            'Monthly Projection': f"${recent_data['yhat'].sum():.2f}"
-        }
+        # Handle both DataFrame (Prophet/Linear) and Series (ARIMA)
+        if isinstance(forecast_data, pd.Series):
+            # ARIMA returns a Series
+            recent_data = forecast_data.tail(30)
+            
+            metrics = {
+                'Forecast Period': '30 days',
+                'Avg Daily Cost': f"${recent_data.mean():.2f}",
+                'Max Daily Cost': f"${recent_data.max():.2f}",
+                'Min Daily Cost': f"${recent_data.min():.2f}",
+                'Monthly Projection': f"${recent_data.sum():.2f}"
+            }
+        elif isinstance(forecast_data, pd.DataFrame) and 'yhat' in forecast_data.columns:
+            # Prophet/Linear returns a DataFrame with 'yhat' column
+            recent_data = forecast_data.tail(30)
+            
+            metrics = {
+                'Forecast Period': '30 days',
+                'Avg Daily Cost': f"${recent_data['yhat'].mean():.2f}",
+                'Max Daily Cost': f"${recent_data['yhat'].max():.2f}",
+                'Min Daily Cost': f"${recent_data['yhat'].min():.2f}",
+                'Monthly Projection': f"${recent_data['yhat'].sum():.2f}"
+            }
+        else:
+            # Fallback for unsupported format
+            return {
+                'Forecast Period': 'N/A',
+                'Avg Daily Cost': 'N/A',
+                'Max Daily Cost': 'N/A',
+                'Min Daily Cost': 'N/A',
+                'Monthly Projection': 'N/A'
+            }
         
         return metrics
     

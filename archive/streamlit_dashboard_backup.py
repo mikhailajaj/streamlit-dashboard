@@ -11,17 +11,8 @@ import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from eda_lib import *
 import warnings
-import sys
-from pathlib import Path
-
-# Add lib directory to Python path for imports
-lib_path = Path(__file__).parent / "lib"
-sys.path.insert(0, str(lib_path))
-
-# Import from reorganized lib structure
-from eda.analyzer import *
-
 warnings.filterwarnings('ignore')
 
 # Try to import ML modules, fallback to None if not available
@@ -29,8 +20,8 @@ ML_AVAILABLE = True
 ML_ERROR_MESSAGE = None
 
 try:
-    from lib.ml.pipeline import AWSMLPipeline, MLMetrics
-    from lib.ml.models import AWSCostForecaster, AWSAnomalyDetector, AWSResourceClusterer, AWSOptimizationPredictor
+    from ml_pipeline import AWSMLPipeline, MLMetrics
+    from ml_models import AWSCostForecaster, AWSAnomalyDetector, AWSResourceClusterer, AWSOptimizationPredictor
     
     # Initialize ML Pipeline
     @st.cache_resource
@@ -72,62 +63,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# WCAG AA Compliant Color Palette
-WCAG_COLORS = {
-    # Primary brand (WCAG AA compliant)
-    'aws_orange': '#D86613',  # Darkened from #FF9900, ratio: 4.53:1 ✓
-    'aws_dark': '#232F3E',    # AWS dark blue, ratio: 15.3:1 ✓
-    
-    # Status colors (colorblind-safe)
-    'success': '#0F8C4F',     # Green, ratio: 4.54:1 ✓
-    'warning': '#B7791F',     # Amber, ratio: 5.12:1 ✓
-    'error': '#C52A1E',       # Red, ratio: 6.21:1 ✓
-    'info': '#0972D3',        # Blue, ratio: 5.84:1 ✓
-    
-    # Chart palette (colorblind-friendly)
-    'chart_blue': '#0972D3',
-    'chart_orange': '#D86613',
-    'chart_green': '#0F8C4F',
-    'chart_purple': '#8B3FD9',
-    'chart_teal': '#067F88',
-    'chart_pink': '#C7407B',
-    
-    # Neutral grays
-    'gray_light': '#F0F2F6',
-    'gray_medium': '#8A93A2',
-    'gray_dark': '#3F4752'
-}
-
-# Custom CSS with WCAG-compliant colors
-st.markdown(f"""
+# Custom CSS
+st.markdown("""
 <style>
-    .main-header {{
+    .main-header {
         font-size: 2.5rem;
-        color: {WCAG_COLORS['aws_orange']};
+        color: #FF9900;
         text-align: center;
         margin-bottom: 2rem;
-    }}
-    .metric-card {{
-        background-color: {WCAG_COLORS['gray_light']};
+    }
+    .metric-card {
+        background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 0.5rem;
-        border-left: 4px solid {WCAG_COLORS['aws_orange']};
-    }}
-    .status-success {{
-        color: {WCAG_COLORS['success']};
-        font-weight: 600;
-    }}
-    .status-warning {{
-        color: {WCAG_COLORS['warning']};
-        font-weight: 600;
-    }}
-    .status-error {{
-        color: {WCAG_COLORS['error']};
-        font-weight: 600;
-    }}
-    .sidebar .sidebar-content {{
+        border-left: 4px solid #FF9900;
+    }
+    .sidebar .sidebar-content {
         background-color: #f8f9fa;
-    }}
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,37 +91,6 @@ def load_and_prepare_data():
     ec2_clean = clean_ec2_data(ec2_df)
     s3_clean = clean_s3_data(s3_df)
     return ec2_clean, s3_clean
-
-def show_empty_state(resource_type, filter_info=None):
-    """Display helpful empty state when no results"""
-    st.warning(f"### 🔍 No {resource_type} Found")
-    
-    st.markdown(f"""
-    Your current filters returned **0 {resource_type.lower()}**.
-    
-    **Possible reasons:**
-    - Filters may be too restrictive
-    - Selected regions don't contain this resource type
-    - Cost/utilization ranges exclude all resources
-    
-    **Try these actions:**
-    """)
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🔄 Clear All Filters", key=f"empty_{resource_type}_all"):
-            st.session_state.clear()
-            st.rerun()
-    
-    with col2:
-        st.button("💡 View Documentation", key=f"empty_{resource_type}_docs")
-    
-    with col3:
-        st.button("📊 Show Summary", key=f"empty_{resource_type}_summary")
-    
-    if filter_info:
-        st.info(f"**Active Filters:** {filter_info}")
 
 def main():
     # Header
@@ -190,104 +112,118 @@ def main():
     if not ML_AVAILABLE:
         st.sidebar.warning("⚠️ ML features require additional dependencies. See ML sections for installation instructions.")
     
+    # Analysis type selection
+    analysis_type = st.sidebar.selectbox(
+        "Select Analysis Type",
+        ["Overview", "EC2 Analysis", "S3 Analysis", "Comparative Analysis", "Optimization", "🤖 ML Forecasting", "🚨 Anomaly Detection", "🎯 Smart Clustering", "💡 AI Recommendations", "Task Completion"]
+    )
+    
     st.sidebar.markdown("---")
+    st.sidebar.subheader("🌍 Geographic Filters")
     
-    # Get all unique values for filters
+    # Region filter
     all_regions = sorted(list(set(ec2_df['Region'].unique()) | set(s3_df['Region'].unique())))
-    all_instance_types = sorted(ec2_df['InstanceType'].unique()) if 'InstanceType' in ec2_df.columns else []
-    all_states = sorted(ec2_df['State'].unique()) if 'State' in ec2_df.columns else []
-    all_storage_classes = sorted(s3_df['StorageClass'].unique()) if 'StorageClass' in s3_df.columns else []
-    all_encryption_types = sorted(s3_df['Encryption'].unique()) if 'Encryption' in s3_df.columns else []
+    selected_regions = st.sidebar.multiselect(
+        "Select AWS Regions",
+        all_regions,
+        default=all_regions,
+        help="Filter resources by AWS regions"
+    )
     
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🖥️ EC2 Filters")
+    
+    # EC2 Instance Type filter
+    if 'InstanceType' in ec2_df.columns:
+        all_instance_types = sorted(ec2_df['InstanceType'].unique())
+        selected_instance_types = st.sidebar.multiselect(
+            "EC2 Instance Types",
+            all_instance_types,
+            default=all_instance_types,
+            help="Filter by EC2 instance types"
+        )
+    else:
+        selected_instance_types = []
+    
+    # EC2 State filter
+    if 'State' in ec2_df.columns:
+        all_states = sorted(ec2_df['State'].unique())
+        selected_states = st.sidebar.multiselect(
+            "EC2 Instance States",
+            all_states,
+            default=all_states,
+            help="Filter by instance states (running/stopped/terminated)"
+        )
+    else:
+        selected_states = []
+    
+    # CPU Utilization range
+    cpu_range = st.sidebar.slider(
+        "CPU Utilization Range (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=(0.0, 100.0),
+        step=5.0,
+        help="Filter instances by CPU utilization percentage"
+    )
+    
+    # EC2 Cost range
     ec2_cost_min, ec2_cost_max = float(ec2_df['CostPerHourUSD'].min()), float(ec2_df['CostPerHourUSD'].max())
+    ec2_cost_range = st.sidebar.slider(
+        "EC2 Cost Range (USD/hour)",
+        min_value=ec2_cost_min,
+        max_value=ec2_cost_max,
+        value=(ec2_cost_min, ec2_cost_max),
+        step=0.01,
+        help="Filter instances by hourly cost"
+    )
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🗂️ S3 Filters")
+    
+    # S3 Storage Class filter
+    if 'StorageClass' in s3_df.columns:
+        all_storage_classes = sorted(s3_df['StorageClass'].unique())
+        selected_storage_classes = st.sidebar.multiselect(
+            "S3 Storage Classes",
+            all_storage_classes,
+            default=all_storage_classes,
+            help="Filter by S3 storage classes"
+        )
+    else:
+        selected_storage_classes = []
+    
+    # S3 Encryption filter
+    if 'Encryption' in s3_df.columns:
+        all_encryption_types = sorted(s3_df['Encryption'].unique())
+        selected_encryption = st.sidebar.multiselect(
+            "S3 Encryption Types",
+            all_encryption_types,
+            default=all_encryption_types,
+            help="Filter by encryption status"
+        )
+    else:
+        selected_encryption = []
+    
+    # S3 Storage Size range (log scale)
     s3_size_min, s3_size_max = float(s3_df['TotalSizeGB'].min()), float(s3_df['TotalSizeGB'].max())
+    s3_size_range = st.sidebar.slider(
+        "S3 Storage Size Range (GB)",
+        min_value=s3_size_min,
+        max_value=s3_size_max,
+        value=(s3_size_min, s3_size_max),
+        help="Filter buckets by storage size"
+    )
+    
+    # S3 Cost range
     s3_cost_min, s3_cost_max = float(s3_df['MonthlyCostUSD'].min()), float(s3_df['MonthlyCostUSD'].max())
-    
-    # Collapsible filter groups
-    with st.sidebar.expander("🌍 Geographic Filters", expanded=True):
-        selected_regions = st.multiselect(
-            "AWS Regions",
-            all_regions,
-            default=all_regions,
-            help="Filter resources by AWS regions"
-        )
-        if st.button("↺ Reset Regions", key="reset_regions"):
-            st.rerun()
-    
-    with st.sidebar.expander("🖥️ EC2 Filters", expanded=False):
-        if all_instance_types:
-            selected_instance_types = st.multiselect(
-                "Instance Types",
-                all_instance_types,
-                default=all_instance_types,
-                help="Filter by EC2 instance types"
-            )
-        else:
-            selected_instance_types = []
-        
-        if all_states:
-            selected_states = st.multiselect(
-                "Instance States",
-                all_states,
-                default=all_states,
-                help="Filter by instance states"
-            )
-        else:
-            selected_states = []
-        
-        cpu_range = st.slider(
-            "CPU Utilization (%)",
-            0.0, 100.0, (0.0, 100.0), 5.0,
-            help="Filter instances by CPU utilization"
-        )
-        
-        ec2_cost_range = st.slider(
-            "Cost Range (USD/hour)",
-            ec2_cost_min, ec2_cost_max,
-            (ec2_cost_min, ec2_cost_max), 0.01,
-            help="Filter instances by hourly cost"
-        )
-        
-        if st.button("↺ Reset EC2 Filters", key="reset_ec2"):
-            st.rerun()
-    
-    with st.sidebar.expander("🗂️ S3 Filters", expanded=False):
-        if all_storage_classes:
-            selected_storage_classes = st.multiselect(
-                "Storage Classes",
-                all_storage_classes,
-                default=all_storage_classes,
-                help="Filter by S3 storage classes"
-            )
-        else:
-            selected_storage_classes = []
-        
-        if all_encryption_types:
-            selected_encryption = st.multiselect(
-                "Encryption Types",
-                all_encryption_types,
-                default=all_encryption_types,
-                help="Filter by encryption status"
-            )
-        else:
-            selected_encryption = []
-        
-        s3_size_range = st.slider(
-            "Storage Size (GB)",
-            s3_size_min, s3_size_max,
-            (s3_size_min, s3_size_max),
-            help="Filter buckets by storage size"
-        )
-        
-        s3_cost_range = st.slider(
-            "Monthly Cost (USD)",
-            s3_cost_min, s3_cost_max,
-            (s3_cost_min, s3_cost_max),
-            help="Filter buckets by monthly cost"
-        )
-        
-        if st.button("↺ Reset S3 Filters", key="reset_s3"):
-            st.rerun()
+    s3_cost_range = st.sidebar.slider(
+        "S3 Monthly Cost Range (USD)",
+        min_value=s3_cost_min,
+        max_value=s3_cost_max,
+        value=(s3_cost_min, s3_cost_max),
+        help="Filter buckets by monthly cost"
+    )
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Date Filters")
@@ -341,141 +277,43 @@ def main():
         (s3_filtered['MonthlyCostUSD'] <= s3_cost_range[1])
     ]
     
-    # Active filter badges (always visible)
-    st.sidebar.markdown("---")
-    active_filters = []
-    if len(selected_regions) < len(all_regions):
-        active_filters.append(f"Regions: {len(selected_regions)}/{len(all_regions)}")
-    if all_instance_types and len(selected_instance_types) < len(all_instance_types):
-        active_filters.append(f"Instance Types: {len(selected_instance_types)}/{len(all_instance_types)}")
-    if cpu_range != (0.0, 100.0):
-        active_filters.append(f"CPU: {cpu_range[0]}-{cpu_range[1]}%")
-    if ec2_cost_range != (ec2_cost_min, ec2_cost_max):
-        active_filters.append(f"EC2 Cost: ${ec2_cost_range[0]:.2f}-${ec2_cost_range[1]:.2f}")
-    if all_storage_classes and len(selected_storage_classes) < len(all_storage_classes):
-        active_filters.append(f"Storage Classes: {len(selected_storage_classes)}/{len(all_storage_classes)}")
-    if s3_cost_range != (s3_cost_min, s3_cost_max):
-        active_filters.append(f"S3 Cost: ${s3_cost_range[0]:.2f}-${s3_cost_range[1]:.2f}")
-    
-    if active_filters:
-        st.sidebar.info(f"🔍 **Active Filters ({len(active_filters)}):**\n" + "\n".join([f"• {f}" for f in active_filters]))
-        if st.sidebar.button("🔄 Clear All Filters", key="clear_all"):
-            st.session_state.clear()
-            st.rerun()
-    else:
-        st.sidebar.success("✓ Showing all resources")
-    
     # Show filter summary
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Filtered Results")
-    st.sidebar.metric("EC2 Instances", f"{len(ec2_filtered)}/{len(ec2_df)}")
-    st.sidebar.metric("S3 Buckets", f"{len(s3_filtered)}/{len(s3_df)}")
+    st.sidebar.subheader("📊 Filter Summary")
+    st.sidebar.info(f"""
+    **Filtered Results:**
+    - EC2 Instances: {len(ec2_filtered)} of {len(ec2_df)}
+    - S3 Buckets: {len(s3_filtered)} of {len(s3_df)}
+    """)
     
-    # Tabbed Navigation System (Priority 1 Fix)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Analytics", 
-        "🤖 AI & ML", 
-        "🎯 Optimization",
-        "💰 Enterprise FinOps",
-        "📋 Reports"
-    ])
+    # Reset filters button
+    if st.sidebar.button("🔄 Reset All Filters"):
+        st.experimental_rerun()
     
-    with tab1:
-        # Analytics Tab - Basic analysis views
-        st.subheader("Analytics Dashboard")
-        analysis_type = st.radio(
-            "Select View",
-            ["Overview", "EC2 Analysis", "S3 Analysis", "Comparative Analysis"],
-            horizontal=True
-        )
-        
-        if len(ec2_filtered) == 0 and analysis_type in ["Overview", "EC2 Analysis", "Comparative Analysis"]:
-            show_empty_state("EC2 Instances", f"{len(active_filters)} filters active")
-        elif len(s3_filtered) == 0 and analysis_type in ["Overview", "S3 Analysis", "Comparative Analysis"]:
-            show_empty_state("S3 Buckets", f"{len(active_filters)} filters active")
-        else:
-            if analysis_type == "Overview":
-                show_overview(ec2_filtered, s3_filtered)
-            elif analysis_type == "EC2 Analysis":
-                show_ec2_analysis(ec2_filtered)
-            elif analysis_type == "S3 Analysis":
-                show_s3_analysis(s3_filtered)
-            elif analysis_type == "Comparative Analysis":
-                show_comparative_analysis(ec2_filtered, s3_filtered)
-    
-    with tab2:
-        # AI & ML Tab - Machine learning features
-        st.subheader("AI & ML Features")
-        
-        if not ML_AVAILABLE:
-            st.error("🚨 **ML Dependencies Not Available**")
-            st.info("Install required packages: `pip install scikit-learn prophet scipy joblib statsmodels`")
-        else:
-            ml_type = st.radio(
-                "Select AI Feature",
-                ["🤖 ML Forecasting", "🚨 Anomaly Detection", "🎯 Smart Clustering"],
-                horizontal=True
-            )
-            
-            if len(ec2_filtered) == 0 or len(s3_filtered) == 0:
-                show_empty_state("Resources for ML Analysis", f"{len(active_filters)} filters active")
-            else:
-                if ml_type == "🤖 ML Forecasting":
-                    show_ml_forecasting(ec2_filtered, s3_filtered)
-                elif ml_type == "🚨 Anomaly Detection":
-                    show_anomaly_detection(ec2_filtered, s3_filtered)
-                elif ml_type == "🎯 Smart Clustering":
-                    show_smart_clustering(ec2_filtered, s3_filtered)
-    
-    with tab3:
-        # Optimization Tab
-        st.subheader("💡 Optimization & Recommendations")
-        
-        if len(ec2_filtered) == 0 and len(s3_filtered) == 0:
-            show_empty_state("Resources for Optimization", f"{len(active_filters)} filters active")
-        else:
-            # Show both optimization and AI recommendations
-            show_optimization(ec2_filtered, s3_filtered)
-            
-            if ML_AVAILABLE:
-                st.markdown("---")
-                show_ai_recommendations(ec2_filtered, s3_filtered)
-    
-    with tab4:
-        # Enterprise FinOps Tab
-        try:
-            from finops.integration import show_finops_dashboard
-            show_finops_dashboard(ec2_filtered, s3_filtered)
-        except ImportError as e:
-            st.error("⚠️ FinOps modules not available. Please ensure finops modules are present.")
-            st.info(f"Error: {e}")
-            st.markdown("""
-            ### 💰 Enterprise FinOps Features
-            
-            This tab requires the following FinOps modules:
-            - `finops_ri_engine.py` - Reserved Instance recommendations
-            - `finops_budget_manager.py` - Budget management and alerts
-            - `finops_tagging_chargeback.py` - Tag compliance and chargeback
-            - `finops_dashboard_integration.py` - Dashboard integration
-            
-            **Financial Impact:** Up to $150K-$300K annual savings through:
-            - Reserved Instance purchases (40-72% discount)
-            - Budget alerts preventing overruns
-            - Tag compliance driving team accountability
-            """)
-    
-    with tab5:
-        # Reports Tab
-        st.subheader("📋 Task Completion Report")
+    if analysis_type == "Overview":
+        show_overview(ec2_filtered, s3_filtered)
+    elif analysis_type == "EC2 Analysis":
+        show_ec2_analysis(ec2_filtered)
+    elif analysis_type == "S3 Analysis":
+        show_s3_analysis(s3_filtered)
+    elif analysis_type == "Comparative Analysis":
+        show_comparative_analysis(ec2_filtered, s3_filtered)
+    elif analysis_type == "Optimization":
+        show_optimization(ec2_filtered, s3_filtered)
+    elif analysis_type == "🤖 ML Forecasting":
+        show_ml_forecasting(ec2_filtered, s3_filtered)
+    elif analysis_type == "🚨 Anomaly Detection":
+        show_anomaly_detection(ec2_filtered, s3_filtered)
+    elif analysis_type == "🎯 Smart Clustering":
+        show_smart_clustering(ec2_filtered, s3_filtered)
+    elif analysis_type == "💡 AI Recommendations":
+        show_ai_recommendations(ec2_filtered, s3_filtered)
+    elif analysis_type == "Task Completion":
         show_task_completion(ec2_filtered, s3_filtered)
 
 def show_overview(ec2_df, s3_df):
     """Display overview dashboard"""
     st.header("📊 Overview")
-    
-    if len(ec2_df) == 0 and len(s3_df) == 0:
-        show_empty_state("Resources")
-        return
     
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -523,87 +361,52 @@ def show_overview(ec2_df, s3_df):
             'S3_Monthly': s3_regional
         }).fillna(0)
         
-        # Use WCAG-compliant colors (Priority 2 & 4 Fix)
         fig = px.bar(
             cost_comparison.reset_index(),
             x='Region',
             y=['EC2_Monthly', 'S3_Monthly'],
-            title=f"Monthly Costs by Region (Total: ${cost_comparison.sum().sum():,.0f})",
-            barmode='group',
-            color_discrete_map={
-                'EC2_Monthly': WCAG_COLORS['chart_blue'],
-                'S3_Monthly': WCAG_COLORS['chart_orange']
-            },
-            labels={'value': 'Monthly Cost (USD)', 'variable': 'Service'}
+            title="Monthly Costs by Region",
+            barmode='group'
         )
-        fig.update_yaxes(tickformat='$,.0f')
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         st.subheader("🎯 Resource Utilization")
         
-        # CPU utilization distribution with WCAG colors
+        # CPU utilization distribution
         fig = px.histogram(
             ec2_df,
             x='CPUUtilization',
             nbins=20,
-            title=f"EC2 CPU Utilization Distribution (n={len(ec2_df)})",
-            labels={'CPUUtilization': 'CPU Utilization (%)', 'count': 'Number of Instances'},
-            color_discrete_sequence=[WCAG_COLORS['chart_green']]
+            title="EC2 CPU Utilization Distribution"
         )
-        fig.update_xaxes(ticksuffix='%')
         st.plotly_chart(fig, use_container_width=True)
 
 def show_ec2_analysis(ec2_df):
     """Display EC2 analysis dashboard"""
     st.header("🖥️ EC2 Analysis")
     
-    if len(ec2_df) == 0:
-        show_empty_state("EC2 Instances")
-        return
-    
     # Instance type analysis
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Instance Types")
-        instance_counts = ec2_df['InstanceType'].value_counts().reset_index()
-        instance_counts.columns = ['InstanceType', 'Count']
-        
-        # Use horizontal bar chart instead of pie chart (Priority 4 Fix)
-        fig = px.bar(
-            instance_counts,
-            y='InstanceType',
-            x='Count',
-            orientation='h',
-            title=f"Instance Type Distribution ({len(instance_counts)} types)",
-            labels={'Count': 'Number of Instances', 'InstanceType': 'Instance Type'},
-            color='Count',
-            color_continuous_scale=[[0, WCAG_COLORS['chart_blue']], [1, WCAG_COLORS['chart_orange']]]
+        instance_counts = ec2_df['InstanceType'].value_counts()
+        fig = px.pie(
+            values=instance_counts.values,
+            names=instance_counts.index,
+            title="Instance Type Distribution"
         )
-        fig.update_yaxes(categoryorder='total ascending')
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         st.subheader("Instance States")
-        state_counts = ec2_df['State'].value_counts().reset_index()
-        state_counts.columns = ['State', 'Count']
-        
-        # Use bar chart with WCAG-compliant colors (Priority 2 & 4 Fix)
-        color_map = {
-            'running': WCAG_COLORS['success'],
-            'stopped': WCAG_COLORS['warning'],
-            'terminated': WCAG_COLORS['error']
-        }
-        
-        fig = px.bar(
-            state_counts,
-            x='State',
-            y='Count',
-            title=f"Instance State Distribution ({len(ec2_df)} total)",
-            labels={'Count': 'Number of Instances'},
-            color='State',
-            color_discrete_map=color_map
+        state_counts = ec2_df['State'].value_counts()
+        fig = px.pie(
+            values=state_counts.values,
+            names=state_counts.index,
+            title="Instance State Distribution",
+            color_discrete_sequence=['green', 'orange', 'red']
         )
         st.plotly_chart(fig, use_container_width=True)
     
@@ -617,16 +420,8 @@ def show_ec2_analysis(ec2_df):
         color='InstanceType',
         size='MemoryUtilization',
         hover_data=['InstanceId', 'Region', 'State'],
-        title=f"CPU Utilization vs Cost per Hour ({len(ec2_df)} instances)",
-        labels={'CPUUtilization': 'CPU Utilization (%)', 'CostPerHourUSD': 'Cost per Hour (USD)'},
-        color_discrete_sequence=[
-            WCAG_COLORS['chart_blue'], WCAG_COLORS['chart_orange'], 
-            WCAG_COLORS['chart_green'], WCAG_COLORS['chart_purple'],
-            WCAG_COLORS['chart_teal'], WCAG_COLORS['chart_pink']
-        ]
+        title="CPU Utilization vs Cost per Hour"
     )
-    fig.update_xaxes(ticksuffix='%')
-    fig.update_yaxes(tickformat='$.2f', tickprefix='$')
     st.plotly_chart(fig, use_container_width=True)
     
     # Top expensive instances
@@ -653,52 +448,29 @@ def show_s3_analysis(s3_df):
     """Display S3 analysis dashboard"""
     st.header("🗂️ S3 Analysis")
     
-    if len(s3_df) == 0:
-        show_empty_state("S3 Buckets")
-        return
-    
     # Storage class analysis
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Storage Classes")
-        storage_counts = s3_df['StorageClass'].value_counts().reset_index()
-        storage_counts.columns = ['StorageClass', 'Count']
-        
-        # Use horizontal bar chart instead of pie (Priority 4 Fix)
-        fig = px.bar(
-            storage_counts,
-            y='StorageClass',
-            x='Count',
-            orientation='h',
-            title=f"Storage Class Distribution ({len(s3_df)} buckets)",
-            labels={'Count': 'Number of Buckets', 'StorageClass': 'Storage Class'},
-            color='Count',
-            color_continuous_scale=[[0, WCAG_COLORS['chart_teal']], [1, WCAG_COLORS['chart_purple']]]
+        storage_counts = s3_df['StorageClass'].value_counts()
+        fig = px.pie(
+            values=storage_counts.values,
+            names=storage_counts.index,
+            title="Storage Class Distribution"
         )
-        fig.update_yaxes(categoryorder='total ascending')
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         st.subheader("Encryption Status")
-        encryption_counts = s3_df['Encryption'].value_counts().reset_index()
-        encryption_counts.columns = ['Encryption', 'Count']
-        
-        # Use WCAG-compliant colors (Priority 2 Fix)
-        color_map = {
-            'None': WCAG_COLORS['error'],
-            'AES256': WCAG_COLORS['success'],
-            'aws:kms': WCAG_COLORS['success']
-        }
-        
+        encryption_counts = s3_df['Encryption'].value_counts()
+        colors = ['red' if x == 'None' else 'green' for x in encryption_counts.index]
         fig = px.bar(
-            encryption_counts,
-            x='Encryption',
-            y='Count',
-            title=f"Encryption Status ({len(s3_df)} buckets)",
-            labels={'Count': 'Number of Buckets'},
-            color='Encryption',
-            color_discrete_map=color_map
+            x=encryption_counts.index,
+            y=encryption_counts.values,
+            title="Encryption Status",
+            color=encryption_counts.index,
+            color_discrete_map={'None': 'red', 'AES256': 'green'}
         )
         st.plotly_chart(fig, use_container_width=True)
     
@@ -1229,10 +1001,10 @@ def show_ml_forecasting(ec2_df, s3_df):
             st.subheader("📊 Cost Forecast Results")
             st.plotly_chart(st.session_state['forecast_chart'], use_container_width=True)
             
-            # Forecast metrics - now works for all model types
-            metrics = MLMetrics.display_forecast_metrics(st.session_state['forecast_data'])
-            
-            if metrics and 'Avg Daily Cost' in metrics:
+            # Forecast metrics
+            if forecast_model.startswith("Prophet"):
+                metrics = MLMetrics.display_forecast_metrics(st.session_state['forecast_data'])
+                
                 col1a, col1b, col1c = st.columns(3)
                 with col1a:
                     st.metric("Avg Daily Cost", metrics['Avg Daily Cost'])
@@ -1250,26 +1022,7 @@ def show_ml_forecasting(ec2_df, s3_df):
         with st.expander("📈 Trend Analysis", expanded=True):
             forecast_data = st.session_state['forecast_data']
             
-            # Handle both DataFrame (Prophet/Linear) and Series (ARIMA)
-            if isinstance(forecast_data, pd.Series):
-                # ARIMA returns a Series
-                recent_avg = forecast_data.head(7).mean()
-                future_avg = forecast_data.tail(min(forecast_periods, len(forecast_data))).mean()
-                
-                if recent_avg > 0:
-                    trend_change = ((future_avg - recent_avg) / recent_avg) * 100
-                    
-                    if trend_change > 10:
-                        st.warning(f"📈 **Increasing Trend Detected**: Costs are projected to increase by {trend_change:.1f}% over the forecast period.")
-                    elif trend_change < -10:
-                        st.success(f"📉 **Decreasing Trend Detected**: Costs are projected to decrease by {abs(trend_change):.1f}% over the forecast period.")
-                    else:
-                        st.info(f"📊 **Stable Trend**: Costs are projected to remain relatively stable (±{abs(trend_change):.1f}%).")
-                else:
-                    st.info("📊 Forecast generated successfully.")
-                    
-            elif isinstance(forecast_data, pd.DataFrame) and 'yhat' in forecast_data.columns:
-                # Prophet/Linear returns DataFrame with 'yhat' column
+            if 'yhat' in forecast_data.columns:
                 recent_avg = forecast_data['yhat'].tail(7).mean()
                 future_avg = forecast_data['yhat'].tail(forecast_periods).mean()
                 
@@ -1281,8 +1034,6 @@ def show_ml_forecasting(ec2_df, s3_df):
                     st.success(f"📉 **Decreasing Trend Detected**: Costs are projected to decrease by {abs(trend_change):.1f}% over the forecast period.")
                 else:
                     st.info(f"📊 **Stable Trend**: Costs are projected to remain relatively stable (±{abs(trend_change):.1f}%).")
-            else:
-                st.info("📊 Forecast generated successfully.")
 
 def show_anomaly_detection(ec2_df, s3_df):
     """Display ML-powered anomaly detection"""

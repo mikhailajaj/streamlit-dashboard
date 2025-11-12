@@ -143,18 +143,19 @@ class AWSCostForecaster:
     
     def plot_forecast(self, forecast_data, periods=30):
         """Create interactive forecast visualization"""
+        fig = go.Figure()
+        
+        # Historical data
+        fig.add_trace(go.Scatter(
+            x=self.data['ds'],
+            y=self.data['y'],
+            mode='lines',
+            name='Historical Costs',
+            line=dict(color='blue')
+        ))
+        
+        # Handle different model types
         if self.model_type == 'prophet':
-            fig = go.Figure()
-            
-            # Historical data
-            fig.add_trace(go.Scatter(
-                x=self.data['ds'],
-                y=self.data['y'],
-                mode='lines',
-                name='Historical Costs',
-                line=dict(color='blue')
-            ))
-            
             # Forecast
             future_dates = forecast_data['ds'].tail(periods)
             future_values = forecast_data['yhat'].tail(periods)
@@ -186,15 +187,89 @@ class AWSCostForecaster:
                 name='Confidence Interval',
                 fillcolor='rgba(255,0,0,0.2)'
             ))
-            
-            fig.update_layout(
-                title='AWS Cost Forecast - Next 30 Days',
-                xaxis_title='Date',
-                yaxis_title='Daily Cost (USD)',
-                hovermode='x unified'
+        
+        elif self.model_type == 'arima':
+            # ARIMA forecast - forecast_data is a Series or array
+            future_dates = pd.date_range(
+                start=self.data['ds'].max() + pd.Timedelta(days=1),
+                periods=periods,
+                freq='D'
             )
             
-            return fig
+            if isinstance(forecast_data, pd.Series):
+                future_values = forecast_data.values
+            else:
+                future_values = forecast_data
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=future_values,
+                mode='lines',
+                name='Forecast',
+                line=dict(color='red', dash='dash')
+            ))
+            
+            # Add simple confidence interval (±15%)
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=future_values * 1.15,
+                fill=None,
+                mode='lines',
+                line_color='rgba(0,0,0,0)',
+                showlegend=False
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=future_values * 0.85,
+                fill='tonexty',
+                mode='lines',
+                line_color='rgba(0,0,0,0)',
+                name='Confidence Interval',
+                fillcolor='rgba(255,0,0,0.2)'
+            ))
+        
+        elif self.model_type == 'linear':
+            # Linear regression forecast (from fallback)
+            future_dates = forecast_data['ds']
+            future_values = forecast_data['yhat']
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=future_values,
+                mode='lines',
+                name='Forecast',
+                line=dict(color='red', dash='dash')
+            ))
+            
+            # Confidence intervals
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=forecast_data['yhat_upper'],
+                fill=None,
+                mode='lines',
+                line_color='rgba(0,0,0,0)',
+                showlegend=False
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=forecast_data['yhat_lower'],
+                fill='tonexty',
+                mode='lines',
+                line_color='rgba(0,0,0,0)',
+                name='Confidence Interval',
+                fillcolor='rgba(255,0,0,0.2)'
+            ))
+        
+        fig.update_layout(
+            title=f'AWS Cost Forecast - Next {periods} Days ({self.model_type.upper()})',
+            xaxis_title='Date',
+            yaxis_title='Daily Cost (USD)',
+            hovermode='x unified'
+        )
+        
+        return fig
 
 class AWSAnomalyDetector:
     """Anomaly Detection for unusual cost patterns"""
